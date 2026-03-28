@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>小米17 Pro 价格监控</title>
+<title>小米17 Pro 价格监控 · 16+512GB</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -110,7 +110,7 @@ td.high { color: #ff5555; }
 <body>
 <div class="header">
   <h1>小米 17 Pro 价格监控</h1>
-  <p>实时追踪各大平台价格变化 · 一键找最低价</p>
+  <p>16+512GB 版本 · 实时追踪各大平台价格变化 · 一键找最低价</p>
 </div>
 
 <div class="container">
@@ -158,22 +158,22 @@ td.high { color: #ff5555; }
 
 <script>
 // ========== 模拟价格数据（基于真实上市价格）==========
-// 小米17 Pro 2025年11月发布，起售价 4999 元（12+256GB）
-// 各版本：12+256 4999 | 16+512 5499 | 16+1TB 5999
+// 小米17 Pro 2025年11月发布，各版本：12+256 4999 | 16+512 5499 | 16+1TB 5999
+// 当前监控版本：16+512GB
 
 const BASE_PRICES = {
-  '小米官网': 4999,
-  '京东':     5049,
-  '天猫':     4999,
-  '苏宁':     5099,
-  '拼多多':   4929,
+  '小米官网': 5499,
+  '京东':     5549,
+  '天猫':     5499,
+  '苏宁':     5599,
+  '拼多多':   5429,
 };
 
 // 模拟近30天价格历史（基于真实促销规律）
 function genHistory() {
   const history = [];
   const now = new Date('2026-03-28');
-  const base = { '小米官网': 4999, '京东': 5049, '天猫': 4999, '苏宁': 5099, '拼多多': 4929 };
+  const base = { '小米官网': 5499, '京东': 5549, '天猫': 5499, '苏宁': 5599, '拼多多': 5429 };
 
   // 价格节点（真实促销：春节、3·8、618等）
   const events = {
@@ -280,7 +280,7 @@ new Chart(document.getElementById('trendChart'), {
           callback: v => '¥' + v.toLocaleString()
         },
         grid: { color: '#222' },
-        min: 4600, max: 5200
+        min: 5000, max: 5800
       }
     }
   }
@@ -311,7 +311,7 @@ const curMin = minPrice;
 const cheapPlatform = platforms.find(p => latestRow[p] === minPrice);
 
 const tips = [
-  `当前最低价：${cheapPlatform} ¥${curMin.toLocaleString()}（12+256GB 标准版）`,
+  `当前最低价：${cheapPlatform} ¥${curMin.toLocaleString()}（16+512GB 版本）`,
   `近30日最低价：¥${hist30Min.toLocaleString()}，最高：¥${hist30Max.toLocaleString()}`,
   curMin <= hist30Min + 50
     ? '目前价格处于近30日低位，现在入手时机较好！'
