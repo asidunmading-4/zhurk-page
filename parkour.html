@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no"/>
+<title>像素跑酷</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:#1a1a2e;
+    display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    min-height:100vh;
+    font-family:'PingFang SC','Microsoft YaHei',sans-serif;
+    overflow:hidden;
+  }
+  h1 { color:#e0c060; font-size:1.4rem; letter-spacing:3px; margin-bottom:10px; }
+  #gameCanvas {
+    border:3px solid #e0c060;
+    border-radius:8px;
+    box-shadow:0 0 30px rgba(224,192,96,0.3);
+    display:block;
+    touch-action:none;
+  }
+  #ui {
+    display:flex; gap:30px; margin-top:10px;
+    color:#ccc; font-size:0.9rem;
+  }
+  #ui span { color:#e0c060; font-weight:bold; }
+  #tip {
+    margin-top:8px; color:#888; font-size:0.8rem;
+  }
+  #overlay {
+    position:absolute;
+    display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    gap:12px;
+    pointer-events:none;
+  }
+  #overlay.hidden { display:none; }
+  .overlay-title { color:#e0c060; font-size:2rem; font-weight:900; letter-spacing:4px; text-shadow:0 0 20px rgba(224,192,96,0.6); }
+  .overlay-sub { color:#ccc; font-size:1rem; }
+  .overlay-score { color:#fff; font-size:1.2rem; }
+  #startBtn {
+    margin-top:14px;
+    padding:12px 40px;
+    background:linear-gradient(135deg,#e0c060,#c8a040);
+    color:#1a1a2e; font-size:1.1rem; font-weight:900;
+    border:none; border-radius:30px; cursor:pointer;
+    letter-spacing:2px; pointer-events:all;
+    box-shadow:0 4px 20px rgba(224,192,96,0.4);
+    transition:transform 0.1s;
+  }
+  #startBtn:active { transform:scale(0.95); }
+</style>
+</head>
+<body>
+<h1>🏃 像素跑酷</h1>
+<div style="position:relative;">
+  <canvas id="gameCanvas" width="600" height="280"></canvas>
+  <div id="overlay">
+    <div class="overlay-title" id="overlayTitle">像素跑酷</div>
+    <div class="overlay-sub" id="overlaySub">躲避障碍，跑得越远越好！</div>
+    <div class="overlay-score" id="overlayScore"></div>
+    <button id="startBtn" onclick="startGame()">开始游戏</button>
+  </div>
+</div>
+<div id="ui">
+  <div>分数：<span id="scoreEl">0</span></div>
+  <div>最高：<span id="bestEl">0</span></div>
+  <div>速度：<span id="speedEl">1x</span></div>
+</div>
+<div id="tip">空格键 / 点击屏幕 = 跳跃 &nbsp;|&nbsp; 双跳可用</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+const GROUND = H - 50;
+
+// ── 颜色主题 ──
+const C = {
+  sky:['#0d0d1a','#1a1a35'],
+  ground:'#2a2a4a',
+  groundLine:'#3a3a6a',
+  player:'#64d8ff',
+  playerShade:'#3ab0d8',
+  obstacle:'#ff6b6b',
+  obstacleDark:'#cc4444',
+  coin:'#ffd700',
+  coinShine:'#fff8aa',
+  star:'rgba(255,255,255,',
+  scoreColor:'#e0c060',
+  particle:['#ff6b6b','#ffd700','#64d8ff','#ff9f43'],
+};
+
+// ── 游戏状态 ──
+let state = 'idle'; // idle | running | dead
+let score = 0, best = 0, frame = 0;
+let speed = 5, baseSpeed = 5;
+
+// ── 玩家 ──
+const player = {
+  x:80, y:GROUND, w:30, h:40,
+  vy:0, jumps:0, maxJumps:2,
+  onGround:false,
+  animFrame:0,
+};
+
+// ── 对象池 ──
+let obstacles = [], coins = [], particles = [], stars = [];
+let bgX = 0;
+
+// ── 生成星星背景 ──
+function initStars() {
+  stars = [];
+  for(let i=0;i<60;i++) {
+    stars.push({ x:Math.random()*W, y:Math.random()*(GROUND-40), r:Math.random()*1.5+0.3, spd:Math.random()*0.3+0.1 });
+  }
+}
+
+// ── 粒子 ──
+function spawnParticles(x,y,color) {
+  for(let i=0;i<8;i++) {
+    particles.push({
+      x,y,
+      vx:(Math.random()-0.5)*6,
+      vy:(Math.random()-0.8)*5,
+      life:1, decay:0.04+Math.random()*0.03,
+      color: color || C.particle[Math.floor(Math.random()*C.particle.length)],
+      r:3+Math.random()*3
+    });
+  }
+}
+
+// ── 障碍物生成 ──
+let nextObstacle = 80;
+function spawnObstacle() {
+  const types = ['low','mid','double'];
+  const t = types[Math.floor(Math.random()*types.length)];
+  if(t==='low') {
+    obstacles.push({x:W+10,y:GROUND-30,w:22,h:30,type:'cactus'});
+  } else if(t==='mid') {
+    obstacles.push({x:W+10,y:GROUND-50,w:18,h:50,type:'cactus'});
+  } else {
+    obstacles.push({x:W+10,y:GROUND-30,w:20,h:30,type:'cactus'});
+    obstacles.push({x:W+48,y:GROUND-45,w:18,h:45,type:'cactus'});
+  }
+}
+
+// ── 金币生成 ──
+let nextCoin = 120;
+function spawnCoin() {
+  const h = [GROUND-60, GROUND-100, GROUND-140];
+  coins.push({x:W+10, y:h[Math.floor(Math.random()*h.length)], r:10, collected:false, anim:0});
+}
+
+// ── 跳跃 ──
+function jump() {
+  if(state !== 'running') return;
+  if(player.jumps < player.maxJumps) {
+    player.vy = -13;
+    player.jumps++;
+    spawnParticles(player.x+player.w/2, player.y+player.h, '#64d8ff');
+  }
+}
+
+// ── 输入 ──
+document.addEventListener('keydown', e => {
+  if(e.code==='Space'||e.key===' ') { e.preventDefault(); jump(); }
+});
+canvas.addEventListener('pointerdown', e => { e.preventDefault(); jump(); });
+
+// ── 开始/重开 ──
+function startGame() {
+  document.getElementById('overlay').classList.add('hidden');
+  score=0; frame=0; speed=baseSpeed;
+  obstacles=[]; coins=[]; particles=[];
+  player.y=GROUND; player.vy=0; player.jumps=0; player.animFrame=0;
+  nextObstacle=90; nextCoin=130;
+  initStars();
+  state='running';
+  requestAnimationFrame(loop);
+}
+
+// ── 死亡 ──
+function die() {
+  state='dead';
+  spawnParticles(player.x+player.w/2, player.y+player.h/2, '#ff6b6b');
+  spawnParticles(player.x+player.w/2, player.y+player.h/2, '#ffd700');
+  if(score>best) best=score;
+  document.getElementById('bestEl').textContent=best;
+  setTimeout(()=>{
+    const ov = document.getElementById('overlay');
+    document.getElementById('overlayTitle').textContent='游戏结束';
+    document.getElementById('overlaySub').textContent='再来一次？';
+    document.getElementById('overlayScore').textContent='本次得分：'+score+'  最高：'+best;
+    document.getElementById('startBtn').textContent='再来一次';
+    ov.classList.remove('hidden');
+  }, 600);
+}
+
+// ── 碰撞检测（AABB）──
+function hit(a,b) {
+  return a.x+6 < b.x+b.w-4 && a.x+a.w-6 > b.x+4 &&
+         a.y+4 < b.y+b.h && a.y+a.h > b.y+4;
+}
+
+// ── 绘制玩家（像素小人）──
+function drawPlayer() {
+  const px = player.x, py = player.y;
+  const run = Math.floor(player.animFrame/6)%4;
+  ctx.save();
+
+  // 身体
+  ctx.fillStyle = C.playerShade;
+  ctx.fillRect(px+4,py+14,22,20);
+  ctx.fillStyle = C.player;
+  ctx.fillRect(px+3,py+12,22,20);
+
+  // 头
+  ctx.fillStyle = C.player;
+  ctx.fillRect(px+6,py,18,14);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(px+10,py+3,5,5); // 眼
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(px+12,py+4,2,3);
+
+  // 腿动画
+  const legOffset = [0,4,0,-4][run];
+  ctx.fillStyle = C.playerShade;
+  ctx.fillRect(px+6, py+32, 8, 10+legOffset);
+  ctx.fillRect(px+16, py+32, 8, 10-legOffset);
+
+  // 手臂
+  const armOffset = [-legOffset, legOffset];
+  ctx.fillStyle = C.player;
+  ctx.fillRect(px-2, py+14+armOffset[0], 6, 10);
+  ctx.fillRect(px+26, py+14+armOffset[1], 6, 10);
+
+  ctx.restore();
+}
+
+// ── 绘制障碍物（仙人掌风格）──
+function drawObstacle(o) {
+  ctx.save();
+  ctx.fillStyle = C.obstacleDark;
+  ctx.fillRect(o.x+3,o.y+3,o.w-6,o.h-3);
+  ctx.fillStyle = C.obstacle;
+  ctx.fillRect(o.x+2,o.y,o.w-4,o.h-3);
+  // 小刺
+  ctx.fillStyle = C.obstacle;
+  ctx.fillRect(o.x-4, o.y+Math.floor(o.h*0.3), 8, 5);
+  ctx.fillRect(o.x+o.w-4, o.y+Math.floor(o.h*0.4), 8, 5);
+  // 顶部圆
+  ctx.beginPath();
+  ctx.arc(o.x+o.w/2, o.y, o.w/2-2, Math.PI, 0);
+  ctx.fill();
+  ctx.restore();
+}
+
+// ── 绘制金币 ──
+function drawCoin(c) {
+  const pulse = Math.sin(c.anim)*2;
+  ctx.save();
+  ctx.shadowColor = C.coin;
+  ctx.shadowBlur = 8;
+  ctx.fillStyle = C.coin;
+  ctx.beginPath();
+  ctx.arc(c.x, c.y, c.r+pulse*0.3, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = C.coinShine;
+  ctx.beginPath();
+  ctx.arc(c.x-3, c.y-3, c.r*0.4, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// ── 绘制地面 ──
+function drawGround() {
+  ctx.fillStyle = C.ground;
+  ctx.fillRect(0,GROUND,W,H-GROUND);
+  ctx.fillStyle = C.groundLine;
+  ctx.fillRect(0,GROUND,W,3);
+  // 地面纹理
+  ctx.fillStyle = '#353560';
+  for(let i=0;i<8;i++) {
+    const x = ((i*90 - bgX*0.3)%W+W)%W;
+    ctx.fillRect(x,GROUND+6,40,2);
+  }
+}
+
+// ── 主循环 ──
+function loop() {
+  if(state!=='running') return;
+  frame++;
+  bgX += speed;
+
+  // 加速
+  speed = baseSpeed + Math.floor(score/200)*0.5;
+  if(speed>14) speed=14;
+
+  // 物理
+  player.vy += 0.55;
+  player.y += player.vy;
+  if(player.y >= GROUND) {
+    player.y = GROUND;
+    player.vy = 0;
+    player.jumps = 0;
+    player.onGround = true;
+  } else {
+    player.onGround = false;
+  }
+  if(player.onGround) player.animFrame++;
+
+  // 生成障碍物
+  nextObstacle--;
+  if(nextObstacle<=0) {
+    spawnObstacle();
+    nextObstacle = Math.floor(Math.random()*60+80) - Math.min(score/100,30);
+    if(nextObstacle<50) nextObstacle=50;
+  }
+
+  // 生成金币
+  nextCoin--;
+  if(nextCoin<=0) {
+    spawnCoin();
+    nextCoin = Math.floor(Math.random()*80+60);
+  }
+
+  // 更新障碍物
+  obstacles = obstacles.filter(o => {
+    o.x -= speed;
+    if(hit(player, o)) { die(); return true; }
+    return o.x > -60;
+  });
+
+  // 更新金币
+  coins = coins.filter(c => {
+    c.x -= speed;
+    c.anim += 0.1;
+    if(!c.collected) {
+      const dx = player.x+player.w/2-c.x, dy = player.y+player.h/2-c.y;
+      if(Math.sqrt(dx*dx+dy*dy) < c.r+14) {
+        c.collected=true;
+        score+=10;
+        spawnParticles(c.x,c.y,C.coin);
+      }
+    }
+    return c.x > -30 && !c.collected;
+  });
+
+  // 更新粒子
+  particles = particles.filter(p => {
+    p.x+=p.vx; p.y+=p.vy; p.vy+=0.2; p.life-=p.decay;
+    return p.life>0;
+  });
+
+  // 分数
+  score++;
+  document.getElementById('scoreEl').textContent = score;
+  document.getElementById('speedEl').textContent = speed.toFixed(1)+'x';
+
+  // ── 绘制 ──
+  // 背景渐变
+  const grad = ctx.createLinearGradient(0,0,0,GROUND);
+  grad.addColorStop(0,'#0d0d1a');
+  grad.addColorStop(1,'#1a1a35');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,W,GROUND);
+
+  // 星星
+  stars.forEach(s => {
+    s.x -= s.spd;
+    if(s.x<0) s.x=W;
+    ctx.fillStyle = C.star + (0.4+Math.sin(frame*0.05+s.x)*0.3)+')';
+    ctx.beginPath();
+    ctx.arc(s.x,s.y,s.r,0,Math.PI*2);
+    ctx.fill();
+  });
+
+  // 远山
+  ctx.fillStyle = '#151530';
+  for(let i=0;i<5;i++) {
+    const mx = ((i*130-bgX*0.1)%W+W)%W;
+    ctx.beginPath();
+    ctx.moveTo(mx,GROUND);
+    ctx.lineTo(mx+65,GROUND-70);
+    ctx.lineTo(mx+130,GROUND);
+    ctx.fill();
+  }
+
+  drawGround();
+
+  // 金币
+  coins.forEach(drawCoin);
+
+  // 障碍物
+  obstacles.forEach(drawObstacle);
+
+  // 玩家
+  drawPlayer();
+
+  // 粒子
+  particles.forEach(p => {
+    ctx.save();
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x,p.y,p.r*p.life,0,Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  });
+
+  // 分数显示
+  ctx.save();
+  ctx.fillStyle = C.scoreColor;
+  ctx.font = 'bold 16px monospace';
+  ctx.fillText('SCORE  '+String(score).padStart(6,'0'), 16, 24);
+  if(best>0) {
+    ctx.fillStyle='#888';
+    ctx.font='12px monospace';
+    ctx.fillText('BEST '+best, 16, 42);
+  }
+  ctx.restore();
+
+  requestAnimationFrame(loop);
+}
+
+// ── 初始画面 ──
+initStars();
+(function drawIdle(){
+  const grad = ctx.createLinearGradient(0,0,0,GROUND);
+  grad.addColorStop(0,'#0d0d1a'); grad.addColorStop(1,'#1a1a35');
+  ctx.fillStyle=grad; ctx.fillRect(0,0,W,GROUND);
+  stars.forEach(s=>{
+    ctx.fillStyle='rgba(255,255,255,0.5)';
+    ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,Math.PI*2); ctx.fill();
+  });
+  ctx.fillStyle='#151530';
+  for(let i=0;i<5;i++){
+    const mx=i*130;
+    ctx.beginPath(); ctx.moveTo(mx,GROUND); ctx.lineTo(mx+65,GROUND-70); ctx.lineTo(mx+130,GROUND); ctx.fill();
+  }
+  drawGround();
+  player.y=GROUND; drawPlayer();
+})();
+</script>
+</body>
+</html>
