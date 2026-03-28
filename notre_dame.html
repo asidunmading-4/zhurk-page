@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>巴黎圣母院 3D 模型</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a1a; overflow: hidden; font-family: 'Microsoft YaHei', sans-serif; }
+  canvas { display: block; }
+  #ui {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+    color: #f5e6c8; text-align: center; pointer-events: none; z-index: 10;
+  }
+  #ui h1 { font-size: 22px; letter-spacing: 4px; text-shadow: 0 0 20px rgba(255,200,100,0.8); }
+  #ui p { font-size: 12px; opacity: 0.6; margin-top: 6px; letter-spacing: 2px; }
+  #info {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    color: rgba(245,230,200,0.5); font-size: 12px; text-align: center;
+    letter-spacing: 1px; pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="ui">
+  <h1>⛪ 巴黎圣母院</h1>
+  <p>Cathédrale Notre-Dame de Paris</p>
+</div>
+<div id="info">🖱️ 拖动旋转 · 滚轮缩放 · 右键平移 &nbsp;|&nbsp; 📱 单指旋转 · 双指缩放</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ---- 基础设置 ----
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0d1b2a);
+scene.fog = new THREE.Fog(0x0d1b2a, 80, 200);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 500);
+camera.position.set(0, 15, 55);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+// ---- 材质定义 ----
+const stoneMat = new THREE.MeshStandardMaterial({ color: 0xc8b89a, roughness: 0.85, metalness: 0.05 });
+const darkStoneMat = new THREE.MeshStandardMaterial({ color: 0x8a7a65, roughness: 0.9, metalness: 0.0 });
+const roofMat = new THREE.MeshStandardMaterial({ color: 0x4a5568, roughness: 0.7, metalness: 0.1 });
+const glassMat = new THREE.MeshStandardMaterial({ color: 0x1a3a6b, roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.7 });
+const goldMat = new THREE.MeshStandardMaterial({ color: 0xd4a820, roughness: 0.3, metalness: 0.8 });
+const groundMat = new THREE.MeshStandardMaterial({ color: 0x9a8c7a, roughness: 0.95 });
+
+const building = new THREE.Group();
+
+// ---- 辅助函数 ----
+function box(w, h, d, mat, x, y, z) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  m.position.set(x, y, z);
+  m.castShadow = true; m.receiveShadow = true;
+  return m;
+}
+function cyl(rt, rb, h, seg, mat, x, y, z) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), mat);
+  m.position.set(x, y, z);
+  m.castShadow = true;
+  return m;
+}
+
+// ---- 地面 ----
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// ---- 主体建筑 ----
+// 主殿（长方形主体）
+building.add(box(28, 14, 60, stoneMat, 0, 7, 0));
+
+// 侧廊（两侧）
+building.add(box(8, 10, 58, stoneMat, -18, 5, 0));
+building.add(box(8, 10, 58, stoneMat,  18, 5, 0));
+
+// 耳堂（横向翼廊）
+building.add(box(50, 13, 12, stoneMat, 0, 6.5, -10));
+
+// ---- 西立面（主正面）----
+const facade = new THREE.Group();
+facade.position.set(0, 0, 30);
+
+// 正面墙体
+facade.add(box(28, 24, 2, stoneMat, 0, 12, 0));
+
+// 三个大门洞
+for (let i = -1; i <= 1; i++) {
+  // 门洞
+  const doorGeo = new THREE.Shape();
+  doorGeo.moveTo(-2.5, 0);
+  doorGeo.lineTo(-2.5, 5);
+  doorGeo.quadraticCurveTo(0, 8, 2.5, 5);
+  doorGeo.lineTo(2.5, 0);
+  doorGeo.lineTo(-2.5, 0);
+  const doorShape = new THREE.ShapeGeometry(doorGeo);
+  const door = new THREE.Mesh(doorShape, darkStoneMat);
+  door.position.set(i * 9, 0, 0.2);
+  facade.add(door);
+
+  // 门柱
+  for (let s of [-1, 1]) {
+    facade.add(box(0.4, 8, 0.4, darkStoneMat, i * 9 + s * 2.8, 4, 0.3));
+  }
+}
+
+// 玫瑰窗（圆形彩窗）
+const roseRing = cyl(3.5, 3.5, 0.3, 32, darkStoneMat, 0, 16, 0.2);
+roseRing.rotation.x = Math.PI / 2;
+facade.add(roseRing);
+const roseGlass = new THREE.Mesh(new THREE.CircleGeometry(3.2, 32), glassMat);
+roseGlass.position.set(0, 16, 0.25);
+facade.add(roseGlass);
+// 玫瑰窗分割线
+for (let i = 0; i < 8; i++) {
+  const spoke = box(0.1, 3, 0.1, darkStoneMat, 0, 16, 0.3);
+  spoke.rotation.z = (i * Math.PI) / 8;
+  facade.add(spoke);
+}
+
+// 王廊（雕像长廊）
+facade.add(box(28, 1.5, 1.5, darkStoneMat, 0, 10.5, 0.2));
+for (let i = -3; i <= 3; i++) {
+  facade.add(cyl(0.25, 0.25, 2, 8, stoneMat, i * 4, 11.5, 0.3));
+}
+
+// 顶部尖拱饰
+for (let i = -1; i <= 1; i++) {
+  const pinnacle = cyl(0, 0.4, 3, 4, stoneMat, i * 9, 25, 0.3);
+  facade.add(pinnacle);
+}
+
+building.add(facade);
+
+// ---- 钟楼（双塔）----
+function buildTower(xOff) {
+  const tGroup = new THREE.Group();
+  tGroup.position.set(xOff, 0, 30);
+
+  // 主塔身
+  tGroup.add(box(9, 28, 9, stoneMat, 0, 14, 0));
+
+  // 塔身窗户
+  for (let floor = 1; floor <= 3; floor++) {
+    for (let side = -1; side <= 1; side += 2) {
+      const win = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 3), glassMat);
+      win.position.set(side * 3.5, floor * 7 + 2, 4.6);
+      tGroup.add(win);
+    }
+  }
+
+  // 塔顶平台
+  tGroup.add(box(10, 1, 10, darkStoneMat, 0, 28.5, 0));
+
+  // 平台栏杆
+  for (let i = -4; i <= 4; i += 2) {
+    tGroup.add(cyl(0.12, 0.12, 2, 6, darkStoneMat, i, 29.5, 4.5));
+    tGroup.add(cyl(0.12, 0.12, 2, 6, darkStoneMat, i, 29.5, -4.5));
+    tGroup.add(cyl(0.12, 0.12, 2, 6, darkStoneMat, 4.5, 29.5, i));
+    tGroup.add(cyl(0.12, 0.12, 2, 6, darkStoneMat, -4.5, 29.5, i));
+  }
+
+  building.add(tGroup);
+}
+buildTower(-11);
+buildTower(11);
+
+// ---- 主屋顶（双坡）----
+function addRoof(w, h, d, x, y, z) {
+  const geo = new THREE.CylinderGeometry(0, w / 1.5, h, 4);
+  const m = new THREE.Mesh(geo, roofMat);
+  m.position.set(x, y, z);
+  m.rotation.y = Math.PI / 4;
+  m.castShadow = true;
+  building.add(m);
+}
+
+// 中殿屋顶
+const navRoofGeo = new THREE.BufferGeometry();
+const hw = 14, hh = 8, hl = 60;
+const verts = new Float32Array([
+  -hw, 0, -hl/2,  hw, 0, -hl/2,  0, hh, -hl/2,
+  -hw, 0,  hl/2,  hw, 0,  hl/2,  0, hh,  hl/2,
+]);
+const idx = [0,1,2, 3,5,4, 0,2,5, 0,5,3, 1,4,5, 1,5,2];
+navRoofGeo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+navRoofGeo.setIndex(idx);
+navRoofGeo.computeVertexNormals();
+const navRoof = new THREE.Mesh(navRoofGeo, roofMat);
+navRoof.position.set(0, 14, 0);
+navRoof.castShadow = true;
+building.add(navRoof);
+
+// 侧廊屋顶
+for (let side of [-1, 1]) {
+  const sRoofGeo = navRoofGeo.clone();
+  const sr = new THREE.Mesh(sRoofGeo, roofMat);
+  sr.position.set(side * 18, 10, 0);
+  sr.scale.set(0.57, 0.7, 1);
+  sr.castShadow = true;
+  building.add(sr);
+}
+
+// 耳堂屋顶
+const tRoofGeo = new THREE.BufferGeometry();
+const tw = 25, th = 7, td = 12;
+const tv = new Float32Array([
+  -tw, 0, -td/2,  tw, 0, -td/2,  0, th, -td/2,
+  -tw, 0,  td/2,  tw, 0,  td/2,  0, th,  td/2,
+]);
+tRoofGeo.setAttribute('position', new THREE.Float32BufferAttribute(tv, 3));
+tRoofGeo.setIndex(idx);
+tRoofGeo.computeVertexNormals();
+const tRoof = new THREE.Mesh(tRoofGeo, roofMat);
+tRoof.position.set(0, 13, -10);
+tRoof.castShadow = true;
+building.add(tRoof);
+
+// ---- 中央尖塔（Spire）----
+const spireBase = cyl(1.5, 2, 20, 8, darkStoneMat, 0, 24, -8);
+building.add(spireBase);
+const spireTip = cyl(0, 1.5, 6, 8, stoneMat, 0, 35, -8);
+building.add(spireTip);
+// 尖塔顶十字
+const crossV = box(0.2, 2.5, 0.2, goldMat, 0, 38.5, -8);
+const crossH = box(1.8, 0.2, 0.2, goldMat, 0, 38, -8);
+building.add(crossV); building.add(crossH);
+
+// ---- 飞扶壁 ----
+for (let z = -22; z <= 10; z += 8) {
+  for (let side of [-1, 1]) {
+    const arch = new THREE.Group();
+    // 斜支撑
+    const sup = box(0.5, 7, 0.5, darkStoneMat, 0, 3.5, 0);
+    sup.rotation.z = side * 0.4;
+    arch.position.set(side * 22, 8, z);
+    arch.add(sup);
+    building.add(arch);
+    // 外柱
+    building.add(cyl(0.5, 0.6, 12, 8, darkStoneMat, side * 24, 6, z));
+    // 外柱顶饰
+    building.add(cyl(0, 0.5, 2, 4, stoneMat, side * 24, 12.5, z));
+  }
+}
+
+// ---- 门廊细节 ----
+// 后殿（半圆形后部）
+const apseSeg = 7;
+for (let i = 0; i < apseSeg; i++) {
+  const ang = (i / (apseSeg - 1)) * Math.PI - Math.PI / 2;
+  const r = 14;
+  const bx = Math.cos(ang) * r;
+  const bz = Math.sin(ang) * r - 30;
+  building.add(box(6, 13, 6, stoneMat, bx, 6.5, bz));
+  building.add(cyl(0, 1, 3, 4, stoneMat, bx, 14, bz));
+}
+
+// ---- 小尖塔装饰 ----
+const pinnaclePositions = [
+  [-14, 20, 30], [14, 20, 30],
+  [-11, 14, -5], [11, 14, -5],
+  [-22, 6, -5], [22, 6, -5],
+];
+for (const [x, y, z] of pinnaclePositions) {
+  building.add(cyl(0, 0.6, 3.5, 4, stoneMat, x, y, z));
+  building.add(cyl(0.6, 0.6, 1, 8, darkStoneMat, x, y - 1.5, z));
+}
+
+scene.add(building);
+
+// ---- 塞纳河（水面）----
+const riverGeo = new THREE.PlaneGeometry(200, 30, 10, 10);
+const riverMat = new THREE.MeshStandardMaterial({
+  color: 0x1a3d5c, roughness: 0.05, metalness: 0.6,
+  transparent: true, opacity: 0.8
+});
+const river = new THREE.Mesh(riverGeo, riverMat);
+river.rotation.x = -Math.PI / 2;
+river.position.set(0, 0.05, 60);
+scene.add(river);
+
+// ---- 灯光 ----
+// 月光
+const moonLight = new THREE.DirectionalLight(0xc8d8ff, 0.8);
+moonLight.position.set(30, 60, 40);
+moonLight.castShadow = true;
+moonLight.shadow.mapSize.set(2048, 2048);
+moonLight.shadow.camera.near = 0.5;
+moonLight.shadow.camera.far = 200;
+moonLight.shadow.camera.left = -80;
+moonLight.shadow.camera.right = 80;
+moonLight.shadow.camera.top = 80;
+moonLight.shadow.camera.bottom = -80;
+scene.add(moonLight);
+
+// 环境光
+scene.add(new THREE.AmbientLight(0x334466, 0.6));
+
+// 暖色投射灯（模拟底部打光）
+const spotL = new THREE.SpotLight(0xffcc88, 1.5, 120, Math.PI / 6, 0.5);
+spotL.position.set(-20, 40, 50);
+spotL.target.position.set(0, 10, 0);
+spotL.castShadow = true;
+scene.add(spotL); scene.add(spotL.target);
+
+const spotR = new THREE.SpotLight(0xffaa55, 1.2, 120, Math.PI / 6, 0.5);
+spotR.position.set(20, 35, 50);
+spotR.target.position.set(0, 10, 0);
+scene.add(spotR); scene.add(spotR.target);
+
+// ---- 星空 ----
+const starGeo = new THREE.BufferGeometry();
+const starCount = 2000;
+const starPos = new Float32Array(starCount * 3);
+for (let i = 0; i < starCount * 3; i++) {
+  starPos[i] = (Math.random() - 0.5) * 400;
+}
+starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3));
+const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.3 }));
+scene.add(stars);
+
+// ---- 轨道控制器（手写简易版）----
+let isDragging = false, isRightDrag = false;
+let lastX = 0, lastY = 0;
+let phi = 0.3, theta = 0;
+let radius = 55;
+let panX = 0, panY = 15;
+let touches = [];
+
+function updateCamera() {
+  camera.position.x = panX + radius * Math.sin(theta) * Math.cos(phi);
+  camera.position.y = panY + radius * Math.sin(phi);
+  camera.position.z = radius * Math.cos(theta) * Math.cos(phi);
+  camera.lookAt(panX, panY - 5, 0);
+}
+
+renderer.domElement.addEventListener('mousedown', e => {
+  isDragging = true;
+  isRightDrag = e.button === 2;
+  lastX = e.clientX; lastY = e.clientY;
+});
+window.addEventListener('mouseup', () => isDragging = false);
+window.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  const dx = (e.clientX - lastX) * 0.005;
+  const dy = (e.clientY - lastY) * 0.005;
+  if (isRightDrag) { panX -= dx * radius * 0.3; panY += dy * radius * 0.3; }
+  else { theta -= dx; phi = Math.max(-0.1, Math.min(1.4, phi - dy)); }
+  lastX = e.clientX; lastY = e.clientY;
+  updateCamera();
+});
+renderer.domElement.addEventListener('wheel', e => {
+  radius = Math.max(15, Math.min(150, radius + e.deltaY * 0.05));
+  updateCamera();
+});
+renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
+
+// 触控
+renderer.domElement.addEventListener('touchstart', e => {
+  touches = Array.from(e.touches);
+  if (touches.length === 1) { lastX = touches[0].clientX; lastY = touches[0].clientY; }
+}, { passive: true });
+renderer.domElement.addEventListener('touchmove', e => {
+  const t = Array.from(e.touches);
+  if (t.length === 1) {
+    const dx = (t[0].clientX - lastX) * 0.006;
+    const dy = (t[0].clientY - lastY) * 0.006;
+    theta -= dx;
+    phi = Math.max(-0.1, Math.min(1.4, phi - dy));
+    lastX = t[0].clientX; lastY = t[0].clientY;
+    updateCamera();
+  } else if (t.length === 2 && touches.length === 2) {
+    const prevDist = Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY);
+    const curDist = Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    radius = Math.max(15, Math.min(150, radius - (curDist - prevDist) * 0.1));
+    updateCamera();
+  }
+  touches = t;
+}, { passive: true });
+
+// ---- 动画 ----
+let t = 0;
+function animate() {
+  requestAnimationFrame(animate);
+  t += 0.01;
+  // 轻微自动旋转（停止交互时）
+  if (!isDragging) {
+    theta += 0.001;
+    updateCamera();
+  }
+  // 水面波动
+  river.rotation.z = Math.sin(t * 0.5) * 0.002;
+  renderer.render(scene, camera);
+}
+
+updateCamera();
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
